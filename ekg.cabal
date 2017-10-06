@@ -26,6 +26,11 @@ extra-source-files:  LICENSE.icons LICENSE.javascript README.md
 cabal-version:       >= 1.8
 tested-with:         GHC == 8.2.1, GHC == 8.0.1, GHC == 7.10.1, GHC == 7.8.4, GHC == 7.6.3
 
+flag allow-th
+  description: enable Template Haskell to embed assets.
+  default: False
+  manual: True
+
 library
   exposed-modules:
     System.Remote.Counter
@@ -37,6 +42,7 @@ library
     Paths_ekg
     System.Remote.Json
     System.Remote.Snap
+    System.ServeEmbedded
 
   build-depends:
     aeson >= 0.4 && < 1.3,
@@ -52,8 +58,15 @@ library
     time < 1.9,
     transformers < 0.6,
     unordered-containers < 0.3
-
-  ghc-options: -Wall
+  if flag(allow-th)
+    build-depends:
+      file-embed
+  
+  default-extensions: CPP
+  if flag(allow-th)
+           CPP-Options: -ALLOW_TH
+  
+  ghc-options: -Wall -Werror
 
 source-repository head
   type:     git

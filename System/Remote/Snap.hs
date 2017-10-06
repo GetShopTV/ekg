@@ -1,10 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, CPP #-}
+#ifdef ALLOW_TH
+{-# LANGUAGE TemplateHaskell #-}
+#endif
 
 module System.Remote.Snap
     ( startServer
     ) where
 
-import Control.Applicative ((<$>), (<|>))
+import Control.Applicative ((<|>))
 import Control.Exception (throwIO)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString as S
@@ -16,7 +19,6 @@ import qualified Data.Text.Encoding as T
 import Data.Word (Word8)
 import Network.Socket (NameInfoFlag(NI_NUMERICHOST), addrAddress, getAddrInfo,
                        getNameInfo)
-import Paths_ekg (getDataDir)
 import Prelude hiding (read)
 import Snap.Core (MonadSnap, Request, Snap, finishWith, getHeader, getRequest,
                   getResponse, method, Method(GET), modifyResponse, pass,
@@ -25,7 +27,14 @@ import Snap.Core (MonadSnap, Request, Snap, finishWith, getHeader, getRequest,
 import Snap.Http.Server (httpServe)
 import qualified Snap.Http.Server.Config as Config
 import Snap.Util.FileServe (serveDirectory)
+
+#ifdef ALLOW_TH
+import File.Embed (embedDir)
+import ServeEmbedded (serveEmbeddedDirectory)
+#else
+import Paths_ekg (getDataDir)
 import System.FilePath ((</>))
+#endif
 
 import System.Metrics
 import System.Remote.Json
@@ -66,15 +75,29 @@ startServer store host port = do
                Config.defaultConfig
     httpServe conf (monitor store)
 
+-- Conditionally embed assets to monitor remote server.
+#ifdef ALLOW_TH
+assets :: [(FilePath, S.ByteString)]
+assets = $(embedDir "assets")
+
+monitor :: Store -> Snap ()
+monitor store = do
+  (jsonHandler $ serve store)
+        <|> serveEmbeddedDirectory assets
+    where
+    jsonHandler = wrapHandler "application/json"
+    wrapHandler fmt handler = method GET $ format fmt $ handler
+#else
 -- | A handler that can be installed into an existing Snap application.
 monitor :: Store -> Snap ()
 monitor store = do
     dataDir <- liftIO getDataDir
     (jsonHandler $ serve store)
         <|> serveDirectory (dataDir </> "assets")
-  where
+        where
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
+#endif
 
 -- | The Accept header of the request.
 acceptHeader :: Request -> Maybe S.ByteString
