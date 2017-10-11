@@ -30,10 +30,10 @@ import Snap.Util.FileServe (serveDirectory)
 
 #ifdef ALLOW_TH
 import File.Embed (embedDir)
-import ServeEmbedded (serveEmbeddedDirectory)
+import ExtractEmbedded (extractEmbeddedDirectory)
 #else
-import Paths_ekg (getDataDir)
-import System.FilePath ((</>))
+--import Paths_ekg (getDataDir)
+--import System.FilePath ((</>))
 #endif
 
 import System.Metrics
@@ -75,15 +75,19 @@ startServer store host port = do
                Config.defaultConfig
     httpServe conf (monitor store)
 
+assetsDir :: FilePath
+assetsDir = "assets"
+
 -- Conditionally embed assets to monitor remote server.
 #ifdef ALLOW_TH
 assets :: [(FilePath, S.ByteString)]
-assets = $(embedDir "assets")
+assets = $(embedDir assetsDir)
 
 monitor :: Store -> Snap ()
 monitor store = do
+  extractEmbeddedDirectory assetsDir assets
   (jsonHandler $ serve store)
-        <|> serveEmbeddedDirectory assets
+        <|> serveDirectory assetsDir
     where
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
@@ -91,9 +95,10 @@ monitor store = do
 -- | A handler that can be installed into an existing Snap application.
 monitor :: Store -> Snap ()
 monitor store = do
-    dataDir <- liftIO getDataDir
+    --dataDir <- liftIO getDataDir
     (jsonHandler $ serve store)
-        <|> serveDirectory (dataDir </> "assets")
+        -- <|> serveDirectory (dataDir </> "assets")
+        <|> serveDirectory assetsDir
         where
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
