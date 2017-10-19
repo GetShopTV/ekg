@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings#-}
 
-module System.ExtractEmbedded
-    ( extractEmbeddedDirectory
-    ) where
+module System.ExtractEmbedded where
 
 import Prelude hiding (writeFile)
 
@@ -13,8 +11,9 @@ import System.Directory (createDirectoryIfMissing)
 
 extractEmbeddedDirectory :: FilePath -> [(FilePath, ByteString)] -> IO ()
 extractEmbeddedDirectory base files = do
-  createDirectoryIfMissing False base
+  createDirectoryIfMissing True base
   mapM_ (extractEmbeddedFile base) files
 
 extractEmbeddedFile :: FilePath -> (FilePath, ByteString) -> IO ()
 extractEmbeddedFile prefix (path, content) = writeFile (prefix </> path) content
+

@@ -1,7 +1,4 @@
 {-# LANGUAGE OverloadedStrings, CPP #-}
-#ifdef ALLOW_TH
-{-# LANGUAGE TemplateHaskell #-}
-#endif
 
 module System.Remote.Snap
     ( startServer
@@ -28,14 +25,10 @@ import Snap.Http.Server (httpServe)
 import qualified Snap.Http.Server.Config as Config
 import Snap.Util.FileServe (serveDirectory)
 
-#ifdef ALLOW_TH
-import File.Embed (embedDir)
-import ExtractEmbedded (extractEmbeddedDirectory)
-#else
---import Paths_ekg (getDataDir)
---import System.FilePath ((</>))
-#endif
+import System.FilePath ((</>))
+import Paths_ekg (getDataDir)
 
+import System.ExtractEmbedded
 import System.Metrics
 import System.Remote.Json
 
@@ -60,12 +53,14 @@ getNumericHostAddress host = do
 startServer :: Store
             -> S.ByteString  -- ^ Host to listen on (e.g. \"localhost\")
             -> Int           -- ^ Port to listen on (e.g. 8000)
+            -> Maybe [(FilePath, S.ByteString)]
             -> IO ()
-startServer store host port = do
+startServer store host port files = do
     -- Snap doesn't allow for non-numeric host names in
     -- 'Snap.setBind'. We work around that limitation by converting a
     -- possible non-numeric host name to a numeric address.
     numericHost <- getNumericHostAddress host
+    prepareAssets files
     let conf = Config.setVerbose False $
                Config.setErrorLog Config.ConfigNoLog $
                Config.setAccessLog Config.ConfigNoLog $
@@ -75,34 +70,25 @@ startServer store host port = do
                Config.defaultConfig
     httpServe conf (monitor store)
 
-assetsDir :: FilePath
-assetsDir = "assets"
+assetsDir :: IO FilePath
+assetsDir = do
+  dataDir <- getDataDir
+  return $ dataDir </> "assets"
 
--- Conditionally embed assets to monitor remote server.
-#ifdef ALLOW_TH
-assets :: [(FilePath, S.ByteString)]
-assets = $(embedDir assetsDir)
+prepareAssets :: Maybe [(FilePath, S.ByteString)] -> IO ()
+prepareAssets (Just files) = do
+  aDir <- assetsDir
+  extractEmbeddedDirectory aDir files
+prepareAssets Nothing = return ()
 
 monitor :: Store -> Snap ()
 monitor store = do
-  extractEmbeddedDirectory assetsDir assets
+  dir <- liftIO assetsDir
   (jsonHandler $ serve store)
-        <|> serveDirectory assetsDir
+        <|> serveDirectory dir
     where
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
-#else
--- | A handler that can be installed into an existing Snap application.
-monitor :: Store -> Snap ()
-monitor store = do
-    --dataDir <- liftIO getDataDir
-    (jsonHandler $ serve store)
-        -- <|> serveDirectory (dataDir </> "assets")
-        <|> serveDirectory assetsDir
-        where
-    jsonHandler = wrapHandler "application/json"
-    wrapHandler fmt handler = method GET $ format fmt $ handler
-#endif
 
 -- | The Accept header of the request.
 acceptHeader :: Request -> Maybe S.ByteString

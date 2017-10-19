@@ -1,4 +1,7 @@
 {-# LANGUAGE CPP, OverloadedStrings #-}
+#ifdef ALLOW_TH
+{-# LANGUAGE TemplateHaskell #-}
+#endif
 
 -- | This module provides remote monitoring of a running process over
 -- HTTP.  It can be used to run an HTTP server that provides both a
@@ -64,6 +67,10 @@ import Control.Concurrent (forkFinally)
 #else
 import Control.Concurrent (forkIO)
 import Control.Exception (SomeException, mask, try)
+#endif
+
+#ifdef ALLOW_TH
+import Data.FileEmbed (embedDir)
 #endif
 
 -- $configuration
@@ -233,7 +240,12 @@ forkServerWith :: Metrics.Store  -- ^ Metric store
 forkServerWith store host port = do
     Metrics.registerCounter "ekg.server_timestamp_ms" getTimeMs store
     me <- myThreadId
-    tid <- withSocketsDo $ forkFinally (startServer store host port) $ \ r ->
+#ifdef ALLOW_TH
+    let files = Just $(embedDir "assets")
+#else
+    let files = Nothing
+#endif
+    tid <- withSocketsDo $ forkFinally (startServer store host port files) $ \ r ->
         case r of
             Right _ -> return ()
             Left e  -> case fromException e of
