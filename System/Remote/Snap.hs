@@ -1,10 +1,10 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, CPP #-}
 
 module System.Remote.Snap
     ( startServer
     ) where
 
-import Control.Applicative ((<$>), (<|>))
+import Control.Applicative ((<|>))
 import Control.Exception (throwIO)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString as S
@@ -16,7 +16,6 @@ import qualified Data.Text.Encoding as T
 import Data.Word (Word8)
 import Network.Socket (NameInfoFlag(NI_NUMERICHOST), addrAddress, getAddrInfo,
                        getNameInfo)
-import Paths_ekg (getDataDir)
 import Prelude hiding (read)
 import Snap.Core (MonadSnap, Request, Snap, finishWith, getHeader, getRequest,
                   getResponse, method, Method(GET), modifyResponse, pass,
@@ -25,8 +24,11 @@ import Snap.Core (MonadSnap, Request, Snap, finishWith, getHeader, getRequest,
 import Snap.Http.Server (httpServe)
 import qualified Snap.Http.Server.Config as Config
 import Snap.Util.FileServe (serveDirectory)
-import System.FilePath ((</>))
 
+import System.FilePath ((</>))
+import Paths_ekg (getDataDir)
+
+import System.ExtractEmbedded
 import System.Metrics
 import System.Remote.Json
 
@@ -51,12 +53,14 @@ getNumericHostAddress host = do
 startServer :: Store
             -> S.ByteString  -- ^ Host to listen on (e.g. \"localhost\")
             -> Int           -- ^ Port to listen on (e.g. 8000)
+            -> Maybe [(FilePath, S.ByteString)]
             -> IO ()
-startServer store host port = do
+startServer store host port files = do
     -- Snap doesn't allow for non-numeric host names in
     -- 'Snap.setBind'. We work around that limitation by converting a
     -- possible non-numeric host name to a numeric address.
     numericHost <- getNumericHostAddress host
+    prepareAssets files
     let conf = Config.setVerbose False $
                Config.setErrorLog Config.ConfigNoLog $
                Config.setAccessLog Config.ConfigNoLog $
@@ -66,13 +70,23 @@ startServer store host port = do
                Config.defaultConfig
     httpServe conf (monitor store)
 
--- | A handler that can be installed into an existing Snap application.
+assetsDir :: IO FilePath
+assetsDir = do
+  dataDir <- getDataDir
+  return $ dataDir </> "assets"
+
+prepareAssets :: Maybe [(FilePath, S.ByteString)] -> IO ()
+prepareAssets (Just files) = do
+  aDir <- assetsDir
+  extractEmbeddedDirectory aDir files
+prepareAssets Nothing = return ()
+
 monitor :: Store -> Snap ()
 monitor store = do
-    dataDir <- liftIO getDataDir
-    (jsonHandler $ serve store)
-        <|> serveDirectory (dataDir </> "assets")
-  where
+  dir <- liftIO assetsDir
+  (jsonHandler $ serve store)
+        <|> serveDirectory dir
+    where
     jsonHandler = wrapHandler "application/json"
     wrapHandler fmt handler = method GET $ format fmt $ handler
 
